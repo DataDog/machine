@@ -1,49 +1,93 @@
-image: docker
+include:
+  - remote: 'https://gitlab-templates.ddbuild.io/dd-package/v1/template.yml'
+  - remote: 'https://gitlab-templates.ddbuild.io/slack-notifier/v1/template.yml'
 
 stages:
-- validate
+- build-ci
 - build
-
-services:
-- docker:dind
+- validate
+- make deb
+- release
+- notify
 
 variables:
-  USE_CONTAINER: "true"
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_DRIVER: overlay
+  CURRENT_IMAGE_VERSION: 1
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/docker/machine
 
-before_script:
-- apk add -U make bash
+build ci image:
+  stage: build-ci
+  tags: [ "runner:docker", "size:large" ]
+  only:
+    changes:
+      - .gitlab-ci.yml
+      - .gitlab-ci/**/*
+    refs:
+      - master
+  image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:18.03.1
+  script:
+    - docker build --tag 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/machine:$CURRENT_IMAGE_VERSION .gitlab-ci/docker
+    - docker push 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/machine:$CURRENT_IMAGE_VERSION
 
-.build_base: &build_base
+.build_base:
+  tags: [ "runner:docker", "size:large"  ]
+  image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/machine:$CURRENT_IMAGE_VERSION
+
+build:
+  extends: .build_base
   stage: build
-  before_script:
-  - apk add -U make bash
-  - export TARGET_OS=$(echo $CI_JOB_NAME | cut -d ' ' -f 1)
-  - export TARGET_ARCH=$(echo $CI_JOB_NAME | cut -d ' ' -f 2)
+  script:
+    - make build
   after_script:
-  - "[[ \"$(find bin -type f -name docker-machine*)\" != \"\" ]]"
+    - "[[ \"$(find bin -type f -name docker-machine*)\" != \"\" ]]"
   artifacts:
     paths:
-    - bin/
+      - bin/
     expire_in: 1 week
-  tags:
-  - docker
-  - privileged
 
-.build_validate: &build_validate
-  <<: *build_base
+test:
+  extends: .build_base
   stage: validate
-  script: make build validate
+  script:
+    - make test
 
-.build_x: &build_x
-  <<: *build_base
-  script: make build-x
+validate:
+  extends: .build_base
+  stage: validate
+  script:
+    - make validate
 
-darwin amd64: *build_x
-linux amd64: *build_validate
-openbsd amd64: *build_x
-windows amd64: *build_x
-linux arm: *build_x
-linux arm64: *build_x
+make deb:
+  stage: make deb
+  image: ubuntu:18.04
+  tags: [ "runner:main", "size:large" ]
+  variables:
+    DEB_DIR: .gitlab-ci/deb/docker-machine
+  script:
+    - mkdir -p $DEB_DIR/usr/local/bin
+    - cp -v bin/docker-machine* $DEB_DIR/usr/local/bin/
+    - chmod -R 775 $DEB_DIR
+    - 'echo "Version: $CI_PIPELINE_ID" >> $DEB_DIR/DEBIAN/control'
+    - dpkg-deb --build $DEB_DIR
+  after_script:
+    - "[[ \"$(find $DEB_DIR -type f -name docker-machine*.deb)\" != \"\"  ]]"
+  artifacts:
+    paths:
+      - .gitlab-ci/deb/docker-machine.deb
+    expire_in: 1 week
 
+upload deb:
+  extends: .dd-package.upload-debian-package
+  variables:
+    DEB_PATH: ".gitlab-ci/deb/docker-machine.deb"
+
+upload deb unstable:
+  extends: .dd-package.upload-debian-package
+  only:
+    refs:
+      - master
+  variables:
+    DD_PACKAGE_REPO: binaries.ddbuild-unstable.io
+    DEB_PATH: ".gitlab-ci/deb/docker-machine.deb"
+
+on-failure:
+  extends: .slack-notifier.on-failure
