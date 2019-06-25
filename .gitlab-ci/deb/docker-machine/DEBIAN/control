@@ -1,0 +1,5 @@
+Package: docker-machine
+Section: devtools
+Maintainer: dd-package
+Architecture: all
+Description: docker-machine
