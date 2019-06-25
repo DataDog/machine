@@ -1,4 +1,10 @@
-# Docker Machine
+# Docker Machine - Datadog Fork
+
+## Why we forked
+
+- Gitlab has great docker-machine runner support, but configuring new EC2 instances with a half dozen plus flags, rather than using a preexisting launch template caused issues and required that those hosts launch configurations be managed differently than most other hosts in that area.
+
+## Docker Machine
 
 ![](https://docs.docker.com/machine/img/logo.png)
 
