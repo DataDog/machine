@@ -1,5 +1,5 @@
 Package: docker-machine
 Section: devtools
 Maintainer: dd-package
-Architecture: all
+Architecture: amd64
 Description: docker-machine

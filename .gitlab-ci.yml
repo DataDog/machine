@@ -82,9 +82,6 @@ upload deb:
 
 upload deb unstable:
   extends: .dd-package.upload-debian-package
-  only:
-    refs:
-      - master
   variables:
     DD_PACKAGE_REPO: binaries.ddbuild-unstable.io
     DEB_PATH: ".gitlab-ci/deb/docker-machine.deb"
