@@ -111,6 +111,9 @@ type Driver struct {
 	Endpoint                string
 	DisableSSL              bool
 	UserDataFile            string
+	LaunchTemplateName      string
+	LaunchTemplateId        string
+	LaunchTemplateVersion   string
 
 	spotInstanceRequestId string
 }
@@ -285,6 +288,18 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "path to file with cloud-init user data",
 			EnvVar: "AWS_USERDATA",
 		},
+		mcnflag.StringFlag{
+			Name:  "amazonec2-launch-template-id",
+			Usage: "id of the launch template to use when launching instance",
+		},
+		mcnflag.StringFlag{
+			Name:  "amazonec2-launch-template-name",
+			Usage: "name of the launch template to use when launching instance",
+		},
+		mcnflag.StringFlag{
+			Name:  "amazonec2-launch-template-version",
+			Usage: "version of the launch template to use when launching instance",
+		},
 	}
 }
 
@@ -383,6 +398,9 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.RetryCount = flags.Int("amazonec2-retries")
 	d.OpenPorts = flags.StringSlice("amazonec2-open-port")
 	d.UserDataFile = flags.String("amazonec2-userdata")
+	d.LaunchTemplateId = flags.String("amazonec2-launch-template-id")
+	d.LaunchTemplateName = flags.String("amazonec2-launch-template-name")
+	d.LaunchTemplateVersion = flags.String("amazonec2-launch-template-version")
 
 	d.DisableSSL = flags.Bool("amazonec2-insecure-transport")
 
@@ -639,6 +657,7 @@ func (d *Driver) innerCreate() error {
 
 	if d.RequestSpotInstance {
 		req := ec2.RequestSpotInstancesInput{
+
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 				ImageId: &d.AMI,
 				Placement: &ec2.SpotPlacement{
@@ -720,24 +739,41 @@ func (d *Driver) innerCreate() error {
 			return fmt.Errorf("Error resolving spot instance to real instance: %v", err)
 		}
 	} else {
-		inst, err := d.getClient().RunInstances(&ec2.RunInstancesInput{
-			ImageId:  &d.AMI,
-			MinCount: aws.Int64(1),
-			MaxCount: aws.Int64(1),
-			Placement: &ec2.Placement{
-				AvailabilityZone: &regionZone,
-			},
-			KeyName:           &d.KeyName,
-			InstanceType:      &d.InstanceType,
-			NetworkInterfaces: netSpecs,
-			Monitoring:        &ec2.RunInstancesMonitoringEnabled{Enabled: aws.Bool(d.Monitoring)},
-			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
-				Name: &d.IamInstanceProfile,
-			},
-			EbsOptimized:        &d.UseEbsOptimizedInstance,
-			BlockDeviceMappings: []*ec2.BlockDeviceMapping{bdm},
-			UserData:            &userdata,
-		})
+		var instanceConfig ec2.RunInstancesInput
+		if d.LaunchTemplateId != "" || d.LaunchTemplateName != "" {
+			log.Info("Entering Datadog Forked Behavior")
+			log.Info("Launching instance using Launch Template, non-network interface (vpc, subnet, sg) related flags")
+			instanceConfig = ec2.RunInstancesInput{
+				MinCount: aws.Int64(1),
+				MaxCount: aws.Int64(1),
+				LaunchTemplate: &ec2.LaunchTemplateSpecification{
+					LaunchTemplateName: &d.LaunchTemplateName,
+					LaunchTemplateId:   &d.LaunchTemplateId,
+					Version:            &d.LaunchTemplateVersion,
+				},
+				NetworkInterfaces: netSpecs,
+			}
+		} else {
+			instanceConfig = ec2.RunInstancesInput{
+				ImageId:  &d.AMI,
+				MinCount: aws.Int64(1),
+				MaxCount: aws.Int64(1),
+				Placement: &ec2.Placement{
+					AvailabilityZone: &regionZone,
+				},
+				KeyName:           &d.KeyName,
+				InstanceType:      &d.InstanceType,
+				NetworkInterfaces: netSpecs,
+				Monitoring:        &ec2.RunInstancesMonitoringEnabled{Enabled: aws.Bool(d.Monitoring)},
+				IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+					Name: &d.IamInstanceProfile,
+				},
+				EbsOptimized:        &d.UseEbsOptimizedInstance,
+				BlockDeviceMappings: []*ec2.BlockDeviceMapping{bdm},
+				UserData:            &userdata,
+			}
+		}
+		inst, err := d.getClient().RunInstances(&instanceConfig)
 
 		if err != nil {
 			return fmt.Errorf("Error launching instance: %s", err)
