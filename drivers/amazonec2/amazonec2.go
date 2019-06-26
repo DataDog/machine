@@ -742,15 +742,16 @@ func (d *Driver) innerCreate() error {
 		var instanceConfig ec2.RunInstancesInput
 		if d.LaunchTemplateId != "" || d.LaunchTemplateName != "" {
 			log.Info("Entering Datadog Forked Behavior")
-			log.Info("Launching instance using Launch Template, non-network interface (vpc, subnet, sg) related flags")
+			log.Info("Launching instance using Launch Template, ignoring flags other than network interface (vpc, subnet, sg) related and keypair flags")
 			instanceConfig = ec2.RunInstancesInput{
-				MinCount: aws.Int64(1),
-				MaxCount: aws.Int64(1),
+				KeyName:           &d.KeyName,
 				LaunchTemplate: &ec2.LaunchTemplateSpecification{
 					LaunchTemplateName: &d.LaunchTemplateName,
 					LaunchTemplateId:   &d.LaunchTemplateId,
 					Version:            &d.LaunchTemplateVersion,
 				},
+				MinCount: aws.Int64(1),
+				MaxCount: aws.Int64(1),
 				NetworkInterfaces: netSpecs,
 			}
 		} else {
