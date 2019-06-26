@@ -29,7 +29,7 @@ build ci image:
     - docker push 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/machine:$CURRENT_IMAGE_VERSION
 
 .build_base:
-  tags: [ "runner:main", "size:large"  ]
+  tags: [ "runner:docker", "size:large"  ]
   image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/machine:$CURRENT_IMAGE_VERSION
 
 build:
